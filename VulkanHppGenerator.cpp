@@ -10325,7 +10325,7 @@ std::string VulkanHppGenerator::generateStructSetter( std::string const & struct
     std::string memberType         = member.arraySizes.empty() ? member.type.compose( "VULKAN_HPP_NAMESPACE" )
                                                                : generateStandardArray( member.type.compose( "VULKAN_HPP_NAMESPACE" ), member.arraySizes );
     bool        isReinterpretation = !member.bitCount.empty() && beginsWith( member.type.type, "Vk" );
-    bool        isBitmask = m_bitmasks.find(member.type.type) != m_bitmasks.end();
+    bool        isBitmask = m_bitmasks.find(member.type.type) != m_bitmasks.end() && member.len.empty();
 
     std::string assignment;
     if ( isReinterpretation )
@@ -10351,7 +10351,14 @@ std::string VulkanHppGenerator::generateStructSetter( std::string const & struct
     if (isBitmask)
     {
       // Add flag
-      assignment = member.name + " |= " + member.name + "_";
+      if ( isReinterpretation )
+      {
+        assignment = member.name + " |= " + "*reinterpret_cast<" + member.type.type + "*>(&" + member.name + "_)";
+      }
+      else
+      {
+        assignment = member.name + " |= " + member.name + "_";
+      }
       str +=
         replaceWithMap( templateString,
                         { { "operation", "add" },
@@ -10364,7 +10371,14 @@ std::string VulkanHppGenerator::generateStructSetter( std::string const & struct
                           { "structureName", structureName } } );
 
       // Remove flag
-      assignment = member.name + " &= ~" + member.name + "_";
+      if ( isReinterpretation )
+      {
+        assignment = member.name + " &= ~" + "*reinterpret_cast<" + member.type.type + "*>(&" + member.name + "_)";
+      }
+      else
+      {
+        assignment = member.name + " &= ~" + member.name + "_";
+      }
       str +=
         replaceWithMap( templateString,
                         { { "operation", "remove" },
@@ -14596,7 +14610,12 @@ int main( int argc, char ** argv )
   static const std::string classFlags = R"(
   template <typename FlagBitsType>
   struct FlagTraits
-  {};
+  {
+    enum : typename std::underlying_type<FlagBitsType>::type
+    {
+      allFlags = typename std::underlying_type<FlagBitsType>::type()
+    };
+  };
 
   template <typename BitType>
   class Flags
